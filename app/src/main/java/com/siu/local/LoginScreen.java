@@ -85,7 +85,7 @@ final class LoginScreen extends FrameLayout {
         updateAccount();requestFocus();
     }
 
-    String firstName(){String name=activity.store.obj("perfil").optString("nombre","LUZ").trim();return name.isEmpty()?"LUZ":name.split("\\s+")[0].toUpperCase(Locale.ROOT);}
+    String firstName(){String name=activity.store.firstName();return name.isEmpty()?"USUARIO":name.toUpperCase(Locale.ROOT);}
     TextView label(String value,int size,Typeface font){
         TextView view=new TextView(getContext());view.setText(value);view.setTextColor(0xFFEFEFEF);
         view.setGravity(Gravity.CENTER);view.setIncludeFontPadding(false);view.setTypeface(font);

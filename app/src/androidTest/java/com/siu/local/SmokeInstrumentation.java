@@ -27,6 +27,7 @@ public class SmokeInstrumentation extends Instrumentation {
             Context isolated=new ContextWrapper(context){@Override public File getFilesDir(){return sandbox;}};
             File data=new File(sandbox,"content.json");data.delete();
             LocalStore local=new LocalStore(isolated);
+            checkPhysicalProfile(local,isolated);
             LocalStore.put(local.obj("perfil"),"nombre","PRUEBA DE PERSISTENCIA");local.save();
             check(new LocalStore(isolated).obj("perfil").getString("nombre").equals("PRUEBA DE PERSISTENCIA"),"Profile persistence");
             Bitmap picture=Bitmap.createBitmap(16,16,Bitmap.Config.ARGB_8888);picture.eraseColor(Color.MAGENTA);
@@ -46,6 +47,8 @@ public class SmokeInstrumentation extends Instrumentation {
             Intent intent=new Intent(context,MainActivity.class);intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK);
             activity=(MainActivity)startActivitySync(intent);checkLogin(activity);activity=checkLockedRecreation(activity);activity=checkCarnetRecreation(activity);MainActivity a=activity;previous=a.store;
             runOnMainSync(()->{a.store=local;a.history.clear();});
+            checkPhysicalCardUi(a,local);
+            checkProfileEmailLayout(a,local);
             String[] routes={"home","drawer","perfil","carnet","ajustes","Social","Materias","Académica","Recursos","Tip's","contactos:0","contactos:1","contactos:2","contactos:3","contactos:4","lugares:0","consultas","consulta:0","nuevaConsulta:0","sugerencias","sugerencia:0","documentos:0","documentos:1","horarios:0","horarios:1","horarios:5","notas","pagos","costos","tramites","tipos","detalle:0","biblioteca","descuentos","correo","proyectos","bancos:0","bancos:1","ayuda","ayudaDetalle:0","ayudaDetalle:1","ayudaDetalle:2","materia:0","editor:","editor:perfil","editor:materias","editor:materias/0","editor:horarios","editor:tiposTramites/0/requisitos","acceso"};
             for(String route:routes){runOnMainSync(()->{a.route=route;a.render();check(a.frame.getChildCount()>0,"Render "+route);});waitForIdleSync();}
             passwordLogin(a);
@@ -58,7 +61,7 @@ public class SmokeInstrumentation extends Instrumentation {
             checkCarnet(a,local,imageName);
             check(local.arr("pagos").length()==6,"Reference payment plan");
             check(local.image("","artwork/logo_carnet.png").getWidth()==886,"Original high-resolution watermark");
-            check(local.image("","portrait_carnet.png").getWidth()==178,"Carnet uses the newer reference portrait framing");
+            check(local.image("","portrait_carnet.png").getWidth()==408,"Carnet uses the physical-card portrait");
             check(local.image("","seal.jpg").getWidth()==472,"Legacy seal fallback uses original artwork");
             check(SiuIcon.codepoint("Social")==0xf500,"Original two-person social glyph");
             check(context.getPackageManager().getApplicationIcon(context.getPackageName()) instanceof android.graphics.drawable.AdaptiveIconDrawable,"Adaptive launcher icon");
@@ -79,7 +82,103 @@ public class SmokeInstrumentation extends Instrumentation {
         }catch(Throwable e){result.putString("stream","\nERROR: "+e+"\n"+android.util.Log.getStackTraceString(e));finish(Activity.RESULT_CANCELED,result);}
         finally{if(activity!=null&&previous!=null){MainActivity a=activity;LocalStore original=previous;runOnMainSync(()->{a.store=original;a.route="home";a.selectedGestion="";a.history.clear();a.render();});}}
     }
+    void checkPhysicalProfile(LocalStore local,Context isolated)throws Exception{
+        JSONObject original=new JSONObject(local.data.toString()),p=local.obj("perfil");
+        check(p.getString("nombre").equals("JOSÉ ALEJANDRO DIAZ ALI"),"Physical-card full name");
+        check(p.getString("correo").equals("daj2033135@est.univalle.edu"),"Physical-card email");
+        check(p.getString("sede").equals("LA PAZ")&&p.getString("carrera").equals("ING. BIOMEDICA"),"Physical-card campus and career");
+        check(p.getString("qrTexto").equals("DAJ2033135"),"Exact decoded physical-card QR payload");
+        check(p.getString("apoderado").equals("FELIX MANUEL")&&p.getString("genero").equals("MASCULINO")&&p.getString("nacimiento").equals("26/03/2003"),"User-supplied guardian, gender and birth date");
+        check(local.image("","portrait.jpg").getWidth()==408&&local.image("","portrait_carnet.png").getHeight()==408,"Both portraits use the same square card crop");
+        try{
+            JSONObject legacy=new JSONObject(original.toString()),old=legacy.getJSONObject("perfil");
+            LocalStore.put(old,"nombre","LUZ GABRIELA CASTAÑETA TARQUINO");LocalStore.put(old,"correo","ctl2033013@est.univalle.edu");
+            LocalStore.put(old,"qrTexto","SIU-LOCAL:2033013");LocalStore.put(old,"apoderado","JUAN CARLOS");LocalStore.put(old,"genero","FEMENINO");LocalStore.put(old,"nacimiento","2/11/2005");
+            LocalStore.put(old,"foto","image_oldportrait.png");LocalStore.put(old,"qrImagen","image_oldqr.png");LocalStore.put(old,"lector",false);
+            LocalStore.put(legacy.getJSONObject("ajustes"),"tema","Claro");LocalStore.put(legacy.getJSONArray("materias").getJSONObject(0),"parcial1","99,0");
+            LocalStore.put(legacy.getJSONObject("proyectos"),"saludo","¡Hola Luz!");
+            local.data=legacy;local.save();LocalStore migrated=new LocalStore(isolated);JSONObject updated=migrated.obj("perfil");
+            check(updated.getString("nombre").equals(p.getString("nombre"))&&updated.getString("correo").equals(p.getString("correo")),"Installed legacy identity migrates");
+            check(updated.getString("qrTexto").equals("DAJ2033135")&&updated.getString("foto").isEmpty()&&updated.getString("qrImagen").isEmpty(),"Migration replaces legacy portrait and custom QR references");
+            check(updated.getString("apoderado").equals("FELIX MANUEL")&&updated.getString("genero").equals("MASCULINO")&&updated.getString("nacimiento").equals("26/03/2003"),"Migration uses user-supplied personal details");
+            check(!updated.getBoolean("lector")&&migrated.obj("ajustes").getString("tema").equals("Claro"),"Migration preserves biometric preference and theme");
+            check(migrated.arr("materias").getJSONObject(0).getString("parcial1").equals("99,0"),"Migration preserves edited academic content");
+            check(migrated.obj("proyectos").getString("saludo").equals("¡Hola José!"),"Migration updates legacy greeting");
+            check(new LocalStore(isolated).obj("perfil").getString("nombre").equals(p.getString("nombre")),"Migrated identity persists");
+            LocalStore.put(updated,"nacimiento","01/01/2000");migrated.save();
+            check(new LocalStore(isolated).obj("perfil").getString("nacimiento").equals("01/01/2000"),"Reopening does not reapply migration to edited card profile");
+            LocalStore.put(old,"nombre","PERFIL PERSONALIZADO");local.data=legacy;local.save();
+            check(new LocalStore(isolated).obj("perfil").getString("foto").equals("image_oldportrait.png"),"Unrelated personalized identity and photo are preserved");
+            LocalStore.put(old,"nombre","LUZ GABRIELA CASTAÑETA TARQUINO");LocalStore.put(old,"foto","");LocalStore.put(old,"qrImagen","");
+            File backup=new File(isolated.getFilesDir(),"legacy-card.zip");local.exportZip(Uri.fromFile(backup));
+            local.importZip(Uri.fromFile(backup));
+            check(local.obj("perfil").getString("qrTexto").equals("DAJ2033135"),"Legacy backup migrates immediately on import");
+            check(new LocalStore(isolated).obj("perfil").getString("correo").equals(p.getString("correo")),"Migrated backup persists");
+            JSONObject incomplete=new JSONObject(original.toString());incomplete.remove("physical_card_details_version");
+            JSONObject details=incomplete.getJSONObject("perfil");
+            for(String key:new String[]{"apoderado","genero","nacimiento"})LocalStore.put(details,key,"");
+            local.data=incomplete;local.save();LocalStore completed=new LocalStore(isolated);
+            check(completed.obj("perfil").getString("apoderado").equals("FELIX MANUEL")&&completed.obj("perfil").getString("genero").equals("MASCULINO")&&completed.obj("perfil").getString("nacimiento").equals("26/03/2003"),"Previously installed physical profile receives missing details");
+            for(String key:new String[]{"apoderado","genero","nacimiento"})LocalStore.put(completed.obj("perfil"),key,"");
+            completed.save();JSONObject cleared=new LocalStore(isolated).obj("perfil");
+            check(cleared.getString("apoderado").isEmpty()&&cleared.getString("genero").isEmpty()&&cleared.getString("nacimiento").isEmpty(),"Details migration runs once and respects later clearing");
+            LocalStore.put(details,"nacimiento","01/01/2000");local.data=incomplete;local.save();LocalStore partial=new LocalStore(isolated);
+            check(partial.obj("perfil").getString("apoderado").equals("FELIX MANUEL")&&partial.obj("perfil").getString("nacimiento").equals("01/01/2000"),"Missing details are filled without overwriting a customized date");
+            LocalStore.put(details,"nacimiento","");local.data=incomplete;
+            File incompleteBackup=new File(isolated.getFilesDir(),"incomplete-card.zip");local.exportZip(Uri.fromFile(incompleteBackup));
+            local.importZip(Uri.fromFile(incompleteBackup));
+            check(local.obj("perfil").getString("apoderado").equals("FELIX MANUEL")&&local.obj("perfil").getString("nacimiento").equals("26/03/2003"),"Older physical-card backup receives missing details immediately");
+        }finally{local.data=original;local.save();}
+    }
+    void checkPhysicalCardUi(MainActivity a,LocalStore local)throws Exception{
+        JSONObject previous=local.data;
+        JSONObject defaults=new JSONObject(new String(a.readAsset("defaults.json"),java.nio.charset.StandardCharsets.UTF_8));
+        try{
+            runOnMainSync(()->{
+                local.data=defaults;a.logout();
+                check(a.loginScreen.firstName().equals("JOSÉ")&&findText(a.frame,"¡BIENVENID@ JOSÉ!")!=null,"Login welcomes physical-card owner");
+                a.loginScreen.switchAccount(true);a.loginScreen.username.setText("daj2033135");
+            });passwordLogin(a);
+            runOnMainSync(()->{
+                a.route="carnet";a.carnetUser=false;a.render();
+                check(findText(a.root,a.carnetName("JOSÉ ALEJANDRO DIAZ ALI"))!=null,"Carnet shows new owner without redesign");
+                check(decodeQr(displayedQr(a)).equals("DAJ2033135"),"Displayed physical-card QR decodes exactly");
+                findText(a.root,"Usuario").performClick();
+                check(findText(a.root,"JOSÉ ALEJANDRO DIAZ ALI")!=null&&findText(a.root,"daj2033135@est.univalle.edu")!=null,"Usuario uses the same physical-card identity");
+                check(findText(a.root,"FELIX MANUEL")!=null&&findText(a.root,"MASCULINO")!=null&&findText(a.root,"26/03/2003")!=null,"Usuario displays the supplied personal details");
+                a.route="drawer";a.render();check(findText(a.frame,"JOSÉ ALEJANDRO DIAZ ALI")!=null,"Drawer uses physical-card owner");
+                a.route="perfil";a.render();check(findText(a.root,"JOSÉ ALEJANDRO DIAZ ALI")!=null,"Profile uses physical-card owner");
+                a.route="correo";a.render();check(findText(a.root,"Cuenta:  daj2033135@est.univalle.edu")!=null,"Email screen uses physical-card email");
+                a.route="proyectos";a.render();check(findText(a.root,"¡Hola José!")!=null,"Projects greet physical-card owner");
+                LocalStore.put(local.obj("perfil"),"nombre","MARÍA PRUEBA");check(a.projectGreeting().equals("¡Hola María!"),"Default project greeting follows profile edits");
+                LocalStore.put(local.obj("proyectos"),"saludo","Bienvenido al proyecto");check(a.projectGreeting().equals("Bienvenido al proyecto"),"Custom project greeting is preserved");
+            });
+        }finally{runOnMainSync(()->{local.data=previous;a.route="home";a.history.clear();a.carnetUser=false;a.render();});}
+    }
     EditText findEdit(android.view.View view){if(view instanceof EditText e)return e;if(view instanceof android.view.ViewGroup g)for(int i=0;i<g.getChildCount();i++){EditText e=findEdit(g.getChildAt(i));if(e!=null)return e;}return null;}
+    void checkProfileEmailLayout(MainActivity a,LocalStore local){
+        runOnMainSync(()->{
+            String original=local.obj("perfil").optString("correo");int oldBg=a.bg,oldCard=a.card,oldFg=a.fg;
+            try{
+                for(boolean light:new boolean[]{false,true})for(boolean carnet:new boolean[]{false,true})for(int screenWidth:new int[]{320,360,411}){
+                    a.bg=light?Color.WHITE:Color.BLACK;a.card=light?Color.WHITE:Color.DKGRAY;a.fg=light?Color.BLACK:Color.WHITE;
+                    LocalStore.put(local.obj("perfil"),"correo","daj2033135@est.univalle.edu");
+                    LinearLayout fields=a.col();a.profileFields(fields,carnet);
+                    int width=a.dp(screenWidth-44);
+                    fields.measure(android.view.View.MeasureSpec.makeMeasureSpec(width,android.view.View.MeasureSpec.EXACTLY),android.view.View.MeasureSpec.makeMeasureSpec(0,android.view.View.MeasureSpec.UNSPECIFIED));
+                    fields.layout(0,0,width,fields.getMeasuredHeight());
+                    TextView email=findText(fields,"daj2033135@est.univalle.edu");
+                    android.text.Layout layout=email.getLayout();
+                    check(email.getMaxLines()==1&&layout!=null&&layout.getLineCount()==1,"Email stays on one line in "+(carnet?"Carnet Usuario":"profile")+" at "+screenWidth+"dp");
+                    check(layout.getEllipsisCount(0)==0&&layout.getLineWidth(0)<=email.getWidth()+1,"Full email fits inside its value column");
+                    LinearLayout row=(LinearLayout)email.getParent();
+                    check(email.getRight()<=row.getWidth()&&email.getCurrentTextColor()==a.fg,"Email stays aligned and matches other field colors");
+                }
+            }finally{
+                LocalStore.put(local.obj("perfil"),"correo",original);a.bg=oldBg;a.card=oldCard;a.fg=oldFg;
+            }
+        });
+    }
     void checkLogin(MainActivity a)throws Exception{
         runOnMainSync(()->{
             a.biometrics.cancel();
@@ -193,7 +292,7 @@ public class SmokeInstrumentation extends Instrumentation {
         JSONObject p=local.obj("perfil");String oldText=p.optString("qrTexto"),oldImage=p.optString("qrImagen");
         runOnMainSync(()->{
             LocalStore.put(p,"qrImagen","");LocalStore.put(p,"qrTexto","SIU-LOCAL:prueba-123");a.route="home";a.history.clear();a.carnetUser=true;a.render();findDescription(a.root,"Carnet virtual").performClick();
-            check(a.route.equals("carnet")&&!a.carnetUser,"Opening carnet selects QR tab");check(findText(a.root,"Carnet").isSelected(),"Carnet tab is selected");check(decodeQr(displayedQr(a)).equals("SIU-LOCAL:prueba-123"),"Displayed QR encodes configured local text");check(findText(a.root,"Sede:")==null,"Carnet tab does not show user fields");check(a.carnetName("LUZ GABRIELA CASTAÑETA TARQUINO").equals("LUZ GABRIELA\nCASTAÑETA TARQUINO"),"Two-line carnet name matches reference");
+            check(a.route.equals("carnet")&&!a.carnetUser,"Opening carnet selects QR tab");check(findText(a.root,"Carnet").isSelected(),"Carnet tab is selected");check(decodeQr(displayedQr(a)).equals("SIU-LOCAL:prueba-123"),"Displayed QR encodes configured local text");check(findText(a.root,"Sede:")==null,"Carnet tab does not show user fields");check(a.carnetName("JOSÉ ALEJANDRO DIAZ ALI").equals("JOSÉ ALEJANDRO\nDIAZ ALI"),"Two-line carnet name keeps physical-card owner readable");
         });waitForIdleSync();
         refreshCarnet(a,()->LocalStore.put(p,"qrTexto","SIU-LOCAL:actualizado-á"),()->check(decodeQr(displayedQr(a)).equals("SIU-LOCAL:actualizado-á"),"Refresh regenerates QR from latest local content"));
         runOnMainSync(()->{

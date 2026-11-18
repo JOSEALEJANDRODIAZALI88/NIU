@@ -23,6 +23,38 @@ final class LocalStore {
             try (InputStream in = c.getAssets().open("defaults.json")) { data = new JSONObject(new String(bytes(in), StandardCharsets.UTF_8)); }
             catch (Exception fatal) { throw new IllegalStateException(fatal); }
         }
+        if (migrateLegacyProfile(data)) save();
+    }
+    private boolean migrateLegacyProfile(JSONObject content) {
+        JSONObject profile = content.optJSONObject("perfil");
+        if (profile == null) return false;
+        // Only replace bundled identities, never a separately edited profile.
+        boolean legacy = "LUZ GABRIELA CASTAÑETA TARQUINO".equals(profile.optString("nombre"))
+                && ("ctl2033013@est.univalle.edu".equalsIgnoreCase(profile.optString("correo"))
+                || "SIU-LOCAL:2033013".equals(profile.optString("qrTexto")));
+        boolean pendingDetails = content.optInt("physical_card_details_version", 0) < 1
+                && "JOSÉ ALEJANDRO DIAZ ALI".equals(profile.optString("nombre"))
+                && ("daj2033135@est.univalle.edu".equalsIgnoreCase(profile.optString("correo"))
+                || "DAJ2033135".equals(profile.optString("qrTexto")));
+        if (!legacy && !pendingDetails) return false;
+        JSONObject defaults;
+        try (InputStream in = context.getAssets().open("defaults.json")) {
+            defaults = new JSONObject(new String(bytes(in), StandardCharsets.UTF_8));
+        } catch (IOException | JSONException e) { throw new IllegalStateException("No se pudo actualizar el perfil del carnet", e); }
+        JSONObject replacement = defaults.optJSONObject("perfil");
+        if (legacy) {
+            for (String key : new String[]{"nombre","nacionalidad","sede","carrera","apoderado","genero","nacimiento","correo","pais","foto","qrImagen","qrTexto"})
+                put(profile, key, replacement.opt(key));
+            JSONObject projects = content.optJSONObject("proyectos");
+            if (projects != null && "¡Hola Luz!".equals(projects.optString("saludo")))
+                put(projects, "saludo", defaults.optJSONObject("proyectos").optString("saludo"));
+        } else {
+            // Fill the previously empty fields once; preserve later edits, including clearing them.
+            for (String key : new String[]{"apoderado","genero","nacimiento"})
+                if (profile.optString(key).trim().isEmpty()) put(profile, key, replacement.opt(key));
+        }
+        put(content, "physical_card_details_version", 1);
+        return true;
     }
     void save() {
         try {
@@ -33,6 +65,10 @@ final class LocalStore {
     }
     JSONObject obj(String key) { return data.optJSONObject(key); }
     JSONArray arr(String key) { return data.optJSONArray(key); }
+    String firstName() {
+        String name = obj("perfil").optString("nombre").trim();
+        return name.isEmpty() ? "" : name.split("\\s+")[0];
+    }
     static void put(JSONObject o, String k, Object v) { try { o.put(k, v); } catch (JSONException e) { throw new IllegalArgumentException(e); } }
     String importImage(Uri uri) throws IOException {
         BitmapFactory.Options bounds = new BitmapFactory.Options(); bounds.inJustDecodeBounds = true;
@@ -102,6 +138,7 @@ final class LocalStore {
         Set<String> required = new HashSet<>(); collectImages(incoming,required);
         for (String name : required) if (!images.containsKey(name)) throw new IOException("La copia no contiene todas las imágenes");
         for (Map.Entry<String, byte[]> entry : images.entrySet()) Files.write(new File(context.getFilesDir(),entry.getKey()).toPath(),entry.getValue());
+        migrateLegacyProfile(incoming);
         data = incoming; save();
     }
     private void validate(Object template, Object value) throws JSONException, IOException {

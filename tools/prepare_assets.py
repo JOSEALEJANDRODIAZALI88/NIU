@@ -3,10 +3,9 @@
 Only explicitly selected images/fonts are copied, never code or APK configuration.
 Requires Pillow for the portrait crop; does not change user data or Gradle files.
 """
-from io import BytesIO
 from pathlib import Path
 from zipfile import ZipFile
-from PIL import Image, ImageCms
+from prepare_card_portraits import prepare_card_portraits
 from prepare_login_font import prepare_login_font
 
 root = Path(__file__).resolve().parents[1]
@@ -37,15 +36,6 @@ with ZipFile(root / 'recursos/SIU_1.82_APKPure.apk') as apk:
             write(resources / ('mipmap-' + density) / (name + '.png'),
                   apk.read('res/mipmap-' + density + '-v4/' + name + '.png'))
 
-# The APK has no personal photo. Keep the portrait from the supplied reference.
-photo = Image.open(root / 'recursos/photo_2026-11-11_06-55-20 (2).jpg')
-photo.crop((34, 177, 182, 325)).save(assets / 'portrait.jpg', quality=95)
-# Preserve the distinct framing of the newer virtual-card reference.
-card_photo = Image.open(root / 'recursos/CARNET VIRTUAL/photo_2026-11-11_22-51-08.jpg')
-profile = card_photo.info.get('icc_profile')
-if profile:
-    card_photo = ImageCms.profileToProfile(card_photo, ImageCms.ImageCmsProfile(BytesIO(profile)),
-                                          ImageCms.createProfile('sRGB'), outputMode='RGB')
-card_photo.crop((206, 235, 384, 413)).save(assets / 'portrait_carnet.png')
+prepare_card_portraits()
 prepare_login_font()
 print('Original artwork, launcher layers, fonts and reference portraits prepared.')

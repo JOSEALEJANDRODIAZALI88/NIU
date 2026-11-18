@@ -18,11 +18,17 @@ Requisitos: JDK 21 o superior, Android SDK 36 y Android 8.0 (API 26) o posterior
 - **Contraseña local: `154745`.** Una contraseña incorrecta mantiene la aplicación bloqueada. Cerrar sesión conserva el contenido y vuelve al acceso.
 - La biometría se solicita automáticamente al abrir una nueva sesión si hay una huella o biometría compatible registrada en Android y **Perfil → Autenticación con Lector** está habilitado. Cancelar permite usar la contraseña. No aparece ningún icono de huella en el formulario; Android gestiona la comprobación y su cuadro de diálogo.
 - Las «Ñ/ñ» y vocales acentuadas usan los trazos de la misma fuente manuscrita, sin cambiar a una fuente del sistema. `python tools/prepare_login_font.py` reproduce `RookieSpanish.ttf` (requiere `fonttools`).
-- **Iniciar sesión en otra cuenta** muestra usuario y contraseña. Esta instalación local reconoce la cuenta configurada: inicialmente `2033013`, `LUZ` o `ctl2033013@est.univalle.edu`. Las cuentas desconocidas se rechazan.
+- **Iniciar sesión en otra cuenta** muestra usuario y contraseña. Esta instalación local reconoce la cuenta configurada: inicialmente `DAJ2033135`, `JOSÉ` o `daj2033135@est.univalle.edu`. Las cuentas desconocidas se rechazan; el PIN sigue siendo `154745`.
 - **Política de privacidad** abre el navegador externo en [la página exacta de las referencias](https://app.univalle.edu/politicaseguridad/politicaseguridad.html).
 - Girar el dispositivo conserva la sesión ya autenticada, pero no guarda el PIN escrito. Un proceso nuevo vuelve a requerir autenticación.
 
 ## Cambiar los datos, fotos y QR
+
+El perfil inicial corresponde a **JOSÉ ALEJANDRO DIAZ ALI**, **ING. BIOMEDICA**, sede **LA PAZ**, según las imágenes de `recursos/tarjeta fisica/`. La foto se recorta de la cara frontal y el QR del reverso contiene exactamente `DAJ2033135`. Los datos complementarios proporcionados por el usuario son: apoderado **FELIX MANUEL**, género **MASCULINO** y nacimiento **26/03/2003**; siguen siendo editables. Se conserva el diseño del Carnet Virtual, sin añadir una pantalla de frente y reverso.
+
+Al actualizar, el perfil de plantilla anterior de Luz se migra automáticamente, incluida su foto y QR, sin borrar materias, ajustes ni otros contenidos. Los perfiles con otra identidad personalizada se conservan. Las copias antiguas con el perfil de plantilla también se migran al importarlas. El acceso, perfil, menú, correo y saludos usan la identidad configurada.
+
+Si el perfil de José ya estaba guardado con los datos complementarios vacíos, se completan una sola vez al actualizar o importar una copia antigua. Los valores personalizados y las ediciones posteriores se conservan.
 
 Abre **☰ -> Ajustes -> ⋮ (Herramientas locales) -> Editar contenido**. El botón del lápiz del perfil abre directamente sus campos.
 
@@ -38,6 +44,8 @@ Abre **☰ -> Ajustes -> ⋮ (Herramientas locales) -> Editar contenido**. El bo
 Los campos se guardan automáticamente al editarlos. Las listas permiten añadir, abrir y eliminar registros. El editor es una pantalla independiente para preservar el diseño de las vistas principales.
 
 **Ver el QR:** abre **Carnet virtual**. La pestaña **Carnet** muestra el QR dentro de la tarjeta, con foto circular, nombre, carrera, sede y botón para actualizarlo desde los datos locales. Al pulsarlo, la flecha gira una vuelta y vuelve a su posición; el botón evita pulsaciones repetidas durante el giro. La animación se cancela al cambiar de pantalla o salir de la aplicación. La pestaña **Usuario** muestra los datos personales y el estado del lector. El diseño sigue las dos referencias de `recursos/CARNET VIRTUAL/`; la pestaña seleccionada se conserva al girar el teléfono. El QR también está disponible desde el editor del perfil. Actualizarlo no solicita ni valida una credencial institucional.
+
+El correo del perfil y de la pestaña **Usuario** ocupa una sola línea, alineada con los demás valores. Su tamaño se ajusta al ancho disponible sin cambiar la dirección guardada ni desbordar la tarjeta.
 
 ## Copias de seguridad
 
@@ -60,6 +68,8 @@ adb shell am instrument -w com.siu.local.test/com.siu.local.SmokeInstrumentation
 
 La instrumentación comprueba las pantallas, navegación por menú y perfil, cambios lista/cuadrícula y tema, persistencia de perfil y notas, importación de imágenes, copia ZIP con imágenes, rechazo de rutas no válidas, recursos originales, icono adaptable y lectura del QR realmente mostrado en el carnet. También verifica ambas pestañas, selección guardada, actualización, imagen QR personalizada y errores de contenido vacío o demasiado largo. Usa un directorio de pruebas independiente del contenido del usuario.
 
+La integración de la tarjeta física pasó **251 comprobaciones en Android API 35**, incluidas migración del perfil anterior y de sus copias ZIP, datos complementarios, conservación de ajustes y perfiles personalizados, cuenta local actualizada y lectura exacta del QR mostrado. El correo completo se verifica en una sola línea, sin desbordes, en perfil y Usuario, con anchos de pantalla de 320, 360 y 411 dp y ambos temas. Compilación y lint sin errores.
+
 El acceso añade pruebas de PIN vacío/incorrecto/correcto, rutas protegidas, cierre de sesión, cuenta desconocida, enlace externo, recreación de la actividad, ausencia de icono biométrico y caracteres españoles de la fuente. Verificación realizada en el emulador Android API 37: **187 comprobaciones de instrumentación** con capturas y **14 comprobaciones de interacción**, incluyendo el lector biométrico del emulador:
 
 ```powershell
@@ -72,7 +82,7 @@ Este script usa el diálogo biométrico real de Android y `adb emu finger touch`
 ### Recursos y comparación visual
 
 - El icono adaptable conserva las capas originales por densidad y muestra el nombre **SIU**, sin «Local», como en `recursos/iconos.jpg`. El identificador de la aplicación no cambia, por lo que actualizarla conserva los datos. Las tarjetas de la cuadrícula usan sus PNG originales; la lista y las barras usan los símbolos de `FontAwesomeSolid.otf` del APK.
-- Los sellos y las banderas proceden del APK, sin ampliaciones de recortes de pantalla. La foto personal procede de las capturas aportadas, con el encuadre de la referencia correspondiente en perfil y carnet; los datos y las imágenes personalizadas existentes tienen prioridad.
+- Los sellos y las banderas proceden del APK, sin ampliaciones de recortes de pantalla. La foto personal de perfil y carnet procede de la tarjeta física aportada; las imágenes elegidas posteriormente desde el editor tienen prioridad. `python tools/prepare_card_portraits.py` reproduce únicamente los dos retratos, sin retocar la persona ni modificar las fotos originales.
 - `python tools/prepare_assets.py` reproduce los recursos seleccionados desde `recursos/SIU_1.82_APKPure.apk`. Requiere Python, Pillow y fonttools (`python -m pip install Pillow fonttools`). No copia código del APK ni modifica los datos guardados.
 - El APK original se abrió en el emulador: solicita autenticación. Sin credenciales, la comparación de las pantallas internas se realiza contra las capturas proporcionadas, no contra una sesión institucional.
 - Las barras del sistema y algunos controles nativos pueden variar entre versiones y fabricantes de Android; no se garantiza una coincidencia píxel por píxel.

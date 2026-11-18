@@ -1,18 +1,18 @@
 {
   "perfil": {
-    "nombre": "LUZ GABRIELA CASTAÑETA TARQUINO",
+    "nombre": "JOSÉ ALEJANDRO DIAZ ALI",
     "nacionalidad": "BOLIVIA",
     "sede": "LA PAZ",
     "carrera": "ING. BIOMEDICA",
-    "apoderado": "JUAN CARLOS",
-    "genero": "FEMENINO",
-    "nacimiento": "2/11/2005",
-    "correo": "ctl2033013@est.univalle.edu",
+    "apoderado": "FELIX MANUEL",
+    "genero": "MASCULINO",
+    "nacimiento": "26/03/2003",
+    "correo": "daj2033135@est.univalle.edu",
     "pais": "BOLIVIA",
     "lector": true,
     "foto": "",
     "qrImagen": "",
-    "qrTexto": "SIU-LOCAL:2033013",
+    "qrTexto": "DAJ2033135",
     "celular": "",
     "correoPersonal": ""
   },
@@ -85,7 +85,7 @@
   "bancos": [],
   "cajas": [],
   "correo": {"claveLocal": "Ejemplo123", "enlace": "https://www.outlook.com/univalle.edu", "nota": "NOTA: Esta contraseña es válida hasta que ingrese por primera vez a su correo electrónico, donde se le solicitará que cambie su contraseña de manera obligatoria. Una vez cambiada, ésta dejará de tener validez."},
-  "proyectos": {"saludo": "¡Hola Luz!", "mensaje": "Observamos que aún no te has unido a nuestras actividades bajo el proyecto 'UProyectos' en la universidad.\n\nTe animamos a unirte a UProyectos y ser parte de esta experiencia enriquecedora. No solo tendrás la oportunidad de contribuir positivamente a la comunidad universitaria, sino que también conocerás a otros estudiantes apasionados y comprometidos como tú.", "motivo": "", "registrado": false},
+  "proyectos": {"saludo": "¡Hola José!", "mensaje": "Observamos que aún no te has unido a nuestras actividades bajo el proyecto 'UProyectos' en la universidad.\n\nTe animamos a unirte a UProyectos y ser parte de esta experiencia enriquecedora. No solo tendrás la oportunidad de contribuir positivamente a la comunidad universitaria, sino que también conocerás a otros estudiantes apasionados y comprometidos como tú.", "motivo": "", "registrado": false},
   "ayuda": [
     {"titulo": "En el SIU puedes...", "textos": ["1.- Puedes contactarte con la dirección de carrera en la opción de Consultas.", "2.- Puedes ver tus notas."]},
     {"titulo": "En tu aplicación Movil puedes...", "textos": ["1.- Puedes seguir tus trámites.", "2.- Puedes ver el clima."]},
