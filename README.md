@@ -1,4 +1,4 @@
-# SIU Local - proyecto Android Studio
+# SIU - proyecto Android Studio
 
 Aplicación Android nativa en **Java**, basada en las capturas y la imagen del icono de `recursos/`, incluidas las dos vistas de `CARNET VIRTUAL/`. Integra imágenes, iconos y la fuente de símbolos del APK original proporcionado. Funciona sin servidor y conserva los datos e imágenes en el almacenamiento privado del teléfono.
 
@@ -37,7 +37,7 @@ Abre **☰ -> Ajustes -> ⋮ (Herramientas locales) -> Editar contenido**. El bo
 
 Los campos se guardan automáticamente al editarlos. Las listas permiten añadir, abrir y eliminar registros. El editor es una pantalla independiente para preservar el diseño de las vistas principales.
 
-**Ver el QR:** abre **Carnet virtual**. La pestaña **Carnet** muestra el QR dentro de la tarjeta, con foto circular, nombre, carrera, sede y botón para actualizarlo desde los datos locales. La pestaña **Usuario** muestra los datos personales y el estado del lector. El diseño sigue las dos referencias de `recursos/CARNET VIRTUAL/`; la pestaña seleccionada se conserva al girar el teléfono. El QR también está disponible desde el editor del perfil. Actualizarlo no solicita ni valida una credencial institucional.
+**Ver el QR:** abre **Carnet virtual**. La pestaña **Carnet** muestra el QR dentro de la tarjeta, con foto circular, nombre, carrera, sede y botón para actualizarlo desde los datos locales. Al pulsarlo, la flecha gira una vuelta y vuelve a su posición; el botón evita pulsaciones repetidas durante el giro. La animación se cancela al cambiar de pantalla o salir de la aplicación. La pestaña **Usuario** muestra los datos personales y el estado del lector. El diseño sigue las dos referencias de `recursos/CARNET VIRTUAL/`; la pestaña seleccionada se conserva al girar el teléfono. El QR también está disponible desde el editor del perfil. Actualizarlo no solicita ni valida una credencial institucional.
 
 ## Copias de seguridad
 
@@ -71,7 +71,7 @@ Este script usa el diálogo biométrico real de Android y `adb emu finger touch`
 
 ### Recursos y comparación visual
 
-- El icono adaptable conserva las capas originales por densidad. Las tarjetas de la cuadrícula usan sus PNG originales; la lista y las barras usan los símbolos de `FontAwesomeSolid.otf` del APK.
+- El icono adaptable conserva las capas originales por densidad y muestra el nombre **SIU**, sin «Local», como en `recursos/iconos.jpg`. El identificador de la aplicación no cambia, por lo que actualizarla conserva los datos. Las tarjetas de la cuadrícula usan sus PNG originales; la lista y las barras usan los símbolos de `FontAwesomeSolid.otf` del APK.
 - Los sellos y las banderas proceden del APK, sin ampliaciones de recortes de pantalla. La foto personal procede de las capturas aportadas, con el encuadre de la referencia correspondiente en perfil y carnet; los datos y las imágenes personalizadas existentes tienen prioridad.
 - `python tools/prepare_assets.py` reproduce los recursos seleccionados desde `recursos/SIU_1.82_APKPure.apk`. Requiere Python, Pillow y fonttools (`python -m pip install Pillow fonttools`). No copia código del APK ni modifica los datos guardados.
 - El APK original se abrió en el emulador: solicita autenticación. Sin credenciales, la comparación de las pantallas internas se realiza contra las capturas proporcionadas, no contra una sesión institucional.

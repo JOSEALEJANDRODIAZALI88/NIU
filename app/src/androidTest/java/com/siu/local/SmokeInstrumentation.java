@@ -62,6 +62,7 @@ public class SmokeInstrumentation extends Instrumentation {
             check(local.image("","seal.jpg").getWidth()==472,"Legacy seal fallback uses original artwork");
             check(SiuIcon.codepoint("Social")==0xf500,"Original two-person social glyph");
             check(context.getPackageManager().getApplicationIcon(context.getPackageName()) instanceof android.graphics.drawable.AdaptiveIconDrawable,"Adaptive launcher icon");
+            check(context.getPackageManager().getApplicationLabel(context.getApplicationInfo()).toString().equals("SIU"),"Launcher label is SIU without Local");
             runOnMainSync(()->{LocalStore.put(local.obj("ajustes"),"cuadricula",true);a.route="home";a.render();check(findImageResource(a.root)==6,"Grid contains five original PNG icons and watermark");a.route="perfil";a.render();check(findDescription(a.root,"Bandera de Bolivia")!=null,"Profile uses original flag, not emoji");a.route="carnet";a.render();check(findDescription(a.root,"Bandera de Bolivia")!=null,"Carnet flag");});
             runOnMainSync(()->{
                 LocalStore.put(local.obj("ajustes"),"cuadricula",false);a.route="home";a.render();
@@ -165,21 +166,52 @@ public class SmokeInstrumentation extends Instrumentation {
         try{return new MultiFormatReader().decode(new BinaryBitmap(new HybridBinarizer(new RGBLuminanceSource(width,height,pixels)))).getText();}catch(NotFoundException e){throw new AssertionError("Carnet QR must be readable",e);}
     }
     Bitmap displayedQr(MainActivity a){ImageView image=(ImageView)findDescription(a.root,"Código QR local, sin validación institucional");check(image!=null&&image.getVisibility()==android.view.View.VISIBLE,"QR is embedded in the carnet");return ((android.graphics.drawable.BitmapDrawable)image.getDrawable()).getBitmap();}
-    void checkCarnet(MainActivity a,LocalStore local,String importedImage){
+    void refreshCarnet(MainActivity a,Runnable configure,Runnable verify) {
+        java.util.concurrent.CountDownLatch finished=new java.util.concurrent.CountDownLatch(1);
+        android.view.View[] views=new android.view.View[2];
         runOnMainSync(()->{
-            JSONObject p=local.obj("perfil");String oldText=p.optString("qrTexto"),oldImage=p.optString("qrImagen");
+            configure.run();views[0]=findDescription(a.root,"Actualizar QR local");views[1]=findDescription(views[0],"refresh");
+            check(views[0].isEnabled(),"Refresh button is initially enabled");views[0].performClick();
+            android.animation.ObjectAnimator turn=a.carnetRefreshAnimator;
+            if(turn!=null){
+                check(turn.isStarted()&&!views[0].isEnabled(),"Refresh starts animation and blocks repeated taps");
+                check(turn.getTarget()==views[1]&&turn.getPropertyName().equals("rotation"),"Only the refresh arrow rotates");
+                views[0].performClick();check(a.carnetRefreshAnimator==turn,"Repeated click does not restart the refresh");
+                turn.addListener(new android.animation.AnimatorListenerAdapter(){
+                    @Override public void onAnimationEnd(android.animation.Animator animation){finished.countDown();}
+                });
+            }else finished.countDown(); // Android may have animations disabled.
+            verify.run();
+        });
+        try{check(finished.await(5,java.util.concurrent.TimeUnit.SECONDS),"Refresh animation finishes");}catch(InterruptedException e){throw new AssertionError(e);}
+        runOnMainSync(()->{
+            check(a.carnetRefreshAnimator==null&&views[0].isEnabled(),"Completed refresh releases animator and enables button");
+            check(views[1].getRotation()==0f,"Refresh arrow returns to its original position");
+        });
+    }
+    void checkCarnet(MainActivity a,LocalStore local,String importedImage){
+        JSONObject p=local.obj("perfil");String oldText=p.optString("qrTexto"),oldImage=p.optString("qrImagen");
+        runOnMainSync(()->{
             LocalStore.put(p,"qrImagen","");LocalStore.put(p,"qrTexto","SIU-LOCAL:prueba-123");a.route="home";a.history.clear();a.carnetUser=true;a.render();findDescription(a.root,"Carnet virtual").performClick();
             check(a.route.equals("carnet")&&!a.carnetUser,"Opening carnet selects QR tab");check(findText(a.root,"Carnet").isSelected(),"Carnet tab is selected");check(decodeQr(displayedQr(a)).equals("SIU-LOCAL:prueba-123"),"Displayed QR encodes configured local text");check(findText(a.root,"Sede:")==null,"Carnet tab does not show user fields");check(a.carnetName("LUZ GABRIELA CASTAÑETA TARQUINO").equals("LUZ GABRIELA\nCASTAÑETA TARQUINO"),"Two-line carnet name matches reference");
-            int history=a.history.size();LocalStore.put(p,"qrTexto","SIU-LOCAL:actualizado-á");findDescription(a.root,"Actualizar QR local").performClick();check(decodeQr(displayedQr(a)).equals("SIU-LOCAL:actualizado-á"),"Refresh regenerates QR from latest local content");
-            findText(a.root,"Usuario").performClick();check(a.carnetUser&&findText(a.root,"Usuario").isSelected(),"Usuario tab is functional and selected");check(findText(a.root,"Sede:")!=null&&findText(a.root,p.optString("correo"))!=null,"Usuario shows profile fields");check(findDescription(a.root,"Código QR local, sin validación institucional")==null,"Usuario hides QR");check(findDescription(a.root,"Bandera de Bolivia")!=null,"Usuario keeps portrait flag");check(a.history.size()==history,"Tab changes do not add back-stack entries");
+        });waitForIdleSync();
+        refreshCarnet(a,()->LocalStore.put(p,"qrTexto","SIU-LOCAL:actualizado-á"),()->check(decodeQr(displayedQr(a)).equals("SIU-LOCAL:actualizado-á"),"Refresh regenerates QR from latest local content"));
+        runOnMainSync(()->{
+            int history=a.history.size();android.view.View refresh=findDescription(a.root,"Actualizar QR local"),arrow=findDescription(refresh,"refresh");refresh.performClick();
+            findText(a.root,"Usuario").performClick();check(a.carnetRefreshAnimator==null&&refresh.isEnabled()&&arrow.getRotation()==0f,"Switching tabs cancels and resets refresh animation");check(a.carnetUser&&findText(a.root,"Usuario").isSelected(),"Usuario tab is functional and selected");check(findText(a.root,"Sede:")!=null&&findText(a.root,p.optString("correo"))!=null,"Usuario shows profile fields");check(findDescription(a.root,"Código QR local, sin validación institucional")==null,"Usuario hides QR");check(findDescription(a.root,"Bandera de Bolivia")!=null,"Usuario keeps portrait flag");check(a.history.size()==history,"Tab changes do not add back-stack entries");
             Bundle state=new Bundle();a.onSaveInstanceState(state);check(state.getBoolean("carnetUser")&&state.getString("route").equals("carnet"),"Selected carnet tab is saved for recreation");a.render();check(findText(a.root,"Usuario").isSelected(),"Rerender preserves selected tab");
             LocalStore.put(local.obj("ajustes"),"tema","Claro");a.render();check(a.bg!=Color.BLACK&&findText(a.root,"Usuario").isSelected(),"Carnet supports light theme without losing selection");LocalStore.put(local.obj("ajustes"),"tema","Oscuro");findText(a.root,"Carnet").performClick();check(!a.carnetUser&&decodeQr(displayedQr(a)).equals("SIU-LOCAL:actualizado-á"),"Switch back to embedded QR");
-            String longPayload="siu-local-".repeat(80);LocalStore.put(p,"qrTexto",longPayload);findDescription(a.root,"Actualizar QR local").performClick();check(decodeQr(displayedQr(a)).equals(longPayload),"QR grows beyond reference grid for larger valid payloads");
-            LocalStore.put(p,"qrTexto","");findDescription(a.root,"Actualizar QR local").performClick();check(findText(a.root,"Introduce el contenido del QR en Ajustes → Editar contenido → Perfil.")!=null,"Empty QR has actionable inline message");
-            LocalStore.put(p,"qrTexto","x".repeat(5000));findDescription(a.root,"Actualizar QR local").performClick();check(findText(a.root,"El contenido es demasiado largo para generar un QR.")!=null,"Oversized QR has inline error");
-            LocalStore.put(p,"qrImagen",importedImage);findDescription(a.root,"Actualizar QR local").performClick();check(displayedQr(a).getPixel(0,0)==Color.MAGENTA,"Imported QR image takes priority over text");
+        });waitForIdleSync();
+        String longPayload="siu-local-".repeat(80);
+        refreshCarnet(a,()->LocalStore.put(p,"qrTexto",longPayload),()->check(decodeQr(displayedQr(a)).equals(longPayload),"QR grows beyond reference grid for larger valid payloads"));
+        refreshCarnet(a,()->LocalStore.put(p,"qrTexto",""),()->check(findText(a.root,"Introduce el contenido del QR en Ajustes → Editar contenido → Perfil.")!=null,"Empty QR has actionable inline message"));
+        refreshCarnet(a,()->LocalStore.put(p,"qrTexto","x".repeat(5000)),()->check(findText(a.root,"El contenido es demasiado largo para generar un QR.")!=null,"Oversized QR has inline error"));
+        refreshCarnet(a,()->LocalStore.put(p,"qrImagen",importedImage),()->check(displayedQr(a).getPixel(0,0)==Color.MAGENTA,"Imported QR image takes priority over text"));
+        runOnMainSync(()->{
             LocalStore.put(p,"qrTexto",oldText);LocalStore.put(p,"qrImagen",oldImage);a.back();check(a.route.equals("home"),"Back from carnet returns to entry screen, not previous tab");
             a.go("drawer");((android.view.View)findText(a.frame,"Carnet virtual").getParent()).performClick();check(a.route.equals("carnet")&&!a.carnetUser,"Drawer opens QR tab");
+            android.view.View refresh=findDescription(a.root,"Actualizar QR local"),arrow=findDescription(refresh,"refresh");refresh.performClick();a.back();
+            check(a.route.equals("home")&&a.carnetRefreshAnimator==null&&refresh.isEnabled()&&arrow.getRotation()==0f,"Leaving carnet cancels refresh without blocking navigation");
         });waitForIdleSync();
     }
     void captureScreens(MainActivity a,LocalStore local)throws Exception{

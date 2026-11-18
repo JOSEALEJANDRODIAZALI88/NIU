@@ -1,5 +1,6 @@
 package com.siu.local;
 
+import android.animation.*;
 import android.app.*;
 import android.os.*;
 import android.content.*;
@@ -10,6 +11,7 @@ import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.text.*;
 import android.view.*;
+import android.view.animation.LinearInterpolator;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.*;
 import com.google.zxing.*;
@@ -33,6 +35,7 @@ public class MainActivity extends Activity {
     boolean authenticated, biometricAttempted, loginAnotherAccount;
     LoginScreen loginScreen;
     BiometricAccess biometrics;
+    ObjectAnimator carnetRefreshAnimator;
     final Handler loginHandler=new Handler(Looper.getMainLooper());
     static final String PRIVACY_URL="https://app.univalle.edu/politicaseguridad/politicaseguridad.html";
     final HashMap<String,Bitmap> artworkCache=new HashMap<>();
@@ -60,10 +63,10 @@ public class MainActivity extends Activity {
         if(focused&&!authenticated&&!biometricAttempted&&!loginAnotherAccount){biometricAttempted=true;requestBiometric();}
     }
     @Override protected void onStop(){
-        super.onStop();biometrics.cancel();loginHandler.removeCallbacksAndMessages(null);
+        super.onStop();cancelCarnetRefresh();biometrics.cancel();loginHandler.removeCallbacksAndMessages(null);
         if(loginScreen!=null){busy=false;loginScreen.loading.setVisibility(View.GONE);}
     }
-    @Override protected void onDestroy(){biometrics.cancel();loginHandler.removeCallbacksAndMessages(null);if(loginScreen!=null)loginScreen.dispose();super.onDestroy();}
+    @Override protected void onDestroy(){cancelCarnetRefresh();biometrics.cancel();loginHandler.removeCallbacksAndMessages(null);if(loginScreen!=null)loginScreen.dispose();super.onDestroy();}
     private void getOnBackInvokedDispatcherCompat() {
         if(Build.VERSION.SDK_INT>=33) getOnBackInvokedDispatcher().registerOnBackInvokedCallback(0,this::back);
     }
@@ -95,6 +98,7 @@ public class MainActivity extends Activity {
         if(home)icon(bar,"qr",WHITE,21,()->go("carnet"));
     }
     void render() {
+        cancelCarnetRefresh();
         if(!authenticated||route.equals("acceso")){
             authenticated=false;route="acceso";history.clear();showLogin();return;
         }
@@ -146,7 +150,7 @@ public class MainActivity extends Activity {
         case "home" -> "Univalle";case "perfil"->"Perfil de usuario";case "carnet"->"Carnet Virtual";case "ajustes"->"Ajustes";case "editor"->"Editar contenido";
         case "contactos","lugares"->cities[Math.min(arg(),4)];case "consultas"->"Consultas";case "consulta","nuevaConsulta"->"Consulta";case "sugerencias"->"Sugerencia";case "sugerencia"->store.arr("categoriasSugerencias").optString(arg());
         case "documentos"->arg()==0?"Entregados":"Pendientes";case "horarios"->days[Math.min(arg(),5)];case "notas"->"Notas";case "pagos"->"Plan de Pagos";case "costos"->"Matrícula, Costo crédito";
-        case "tramites"->"Mis Trámites";case "tipos"->"Tipos de Trámites";case "detalle"->"Tipos de Trámites - Detalle";case "biblioteca"->"Biblioteca";case "descuentos"->"Vitrina de Descuentos";case "correo"->"Contraseña de Correo";case "proyectos"->"Participación en UProyectos";case "bancos"->arg()==0?"Bancos":"Cajas";case "ayuda"->"Sabías que...";case "ayudaDetalle"->store.arr("ayuda").optJSONObject(arg()).optString("titulo");case "acceso"->"SIU Local";case "materia"->"Materia";default->s;
+        case "tramites"->"Mis Trámites";case "tipos"->"Tipos de Trámites";case "detalle"->"Tipos de Trámites - Detalle";case "biblioteca"->"Biblioteca";case "descuentos"->"Vitrina de Descuentos";case "correo"->"Contraseña de Correo";case "proyectos"->"Participación en UProyectos";case "bancos"->arg()==0?"Bancos":"Cajas";case "ayuda"->"Sabías que...";case "ayudaDetalle"->store.arr("ayuda").optJSONObject(arg()).optString("titulo");case "acceso"->"SIU";case "materia"->"Materia";default->s;
     };}
     void tabs(String[] labels,int selected,java.util.function.IntConsumer action) {
         LinearLayout r=row();r.setBackgroundColor(Color.rgb(128,128,128));add(body,r,-1,48);
@@ -279,9 +283,26 @@ public class MainActivity extends Activity {
             ImageView qr=new ImageView(this);qr.setScaleType(ImageView.ScaleType.FIT_CENTER);qr.setContentDescription("Código QR local, sin validación institucional");qrPaper.addView(qr,new FrameLayout.LayoutParams(-1,-1));
             TextView error=text("",13,Color.DKGRAY,false);error.setGravity(Gravity.CENTER);qrPaper.addView(error,new FrameLayout.LayoutParams(-1,-1));
             LinearLayout.LayoutParams qp=new LinearLayout.LayoutParams(dp(250),dp(250));qp.gravity=Gravity.CENTER_HORIZONTAL;box.addView(qrPaper,qp);updateCarnetQr(qr,error);gap(box,8);
-            FrameLayout refresh=new FrameLayout(this);View circle=new View(this);circle.setBackground(shape(bg==Color.BLACK?Color.rgb(23,23,23):bg,30));refresh.addView(circle,new FrameLayout.LayoutParams(dp(38),dp(38),Gravity.CENTER));SiuIcon arrow=new SiuIcon(this,"refresh",BRAND);refresh.addView(arrow,new FrameLayout.LayoutParams(dp(17),dp(17),Gravity.CENTER));refresh.setContentDescription("Actualizar QR local");refresh.setFocusable(true);refresh.setOnClickListener(v->{updateCarnetQr(qr,error);refresh.announceForAccessibility("QR local actualizado");});LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(dp(48),dp(48));rp.gravity=Gravity.CENTER_HORIZONTAL;box.addView(refresh,rp);
+            FrameLayout refresh=new FrameLayout(this);View circle=new View(this);circle.setBackground(shape(bg==Color.BLACK?Color.rgb(23,23,23):bg,30));refresh.addView(circle,new FrameLayout.LayoutParams(dp(38),dp(38),Gravity.CENTER));SiuIcon arrow=new SiuIcon(this,"refresh",BRAND);refresh.addView(arrow,new FrameLayout.LayoutParams(dp(17),dp(17),Gravity.CENTER));refresh.setContentDescription("Actualizar QR local");refresh.setFocusable(true);refresh.setOnClickListener(v->refreshCarnetQr(refresh,arrow,qr,error));LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(dp(48),dp(48));rp.gravity=Gravity.CENTER_HORIZONTAL;box.addView(refresh,rp);
         }
     }
+    void refreshCarnetQr(View refresh,View arrow,ImageView qr,TextView error) {
+        if(!refresh.isEnabled())return;
+        refresh.setEnabled(false);updateCarnetQr(qr,error);
+        CharSequence announcement=qr.getVisibility()==View.VISIBLE?"QR local actualizado":error.getText();
+        ObjectAnimator turn=ObjectAnimator.ofFloat(arrow,View.ROTATION,0f,360f);turn.setDuration(600);turn.setInterpolator(new LinearInterpolator());
+        turn.addListener(new AnimatorListenerAdapter(){
+            boolean cancelled;
+            @Override public void onAnimationCancel(Animator animation){cancelled=true;}
+            @Override public void onAnimationEnd(Animator animation){
+                arrow.setRotation(0f);refresh.setEnabled(true);
+                if(carnetRefreshAnimator==animation)carnetRefreshAnimator=null;
+                if(!cancelled&&refresh.isAttachedToWindow())refresh.announceForAccessibility(announcement);
+            }
+        });
+        carnetRefreshAnimator=turn;turn.start();
+    }
+    void cancelCarnetRefresh() {if(carnetRefreshAnimator!=null)carnetRefreshAnimator.cancel();}
     String carnetName(String value) {
         String name=value.trim().replaceAll("\\s+"," ");int split=-1;
         for(int i=0;i<name.length();i++)if(name.charAt(i)==' '&&(split<0||Math.abs(i-name.length()/2)<Math.abs(split-name.length()/2)))split=i;
@@ -437,5 +458,5 @@ public class MainActivity extends Activity {
     void pickImage(String path){pendingImagePath=path;Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.setType("image/*");i.addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(i,71);}
     void exportBackup(){Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT);i.setType("application/zip");i.addCategory(Intent.CATEGORY_OPENABLE);i.putExtra(Intent.EXTRA_TITLE,"SIU-local-"+new java.text.SimpleDateFormat("yyyyMMdd-HHmm",Locale.ROOT).format(new Date())+".zip");startActivityForResult(i,72);}
     void importBackup(){new AlertDialog.Builder(this).setTitle("Importar copia").setMessage("La copia reemplazará los datos actuales. Puedes exportarlos antes desde Ajustes.").setNegativeButton("Cancelar",null).setPositiveButton("Elegir archivo",(d,w)->{Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.setType("application/zip");i.addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(i,73);}).show();}
-    @Override protected void onActivityResult(int request,int result,Intent intent){super.onActivityResult(request,result,intent);if(result!=RESULT_OK||intent==null||intent.getData()==null)return;Uri uri=intent.getData();if(request!=71&&request!=72&&request!=73)return;String imagePath=pendingImagePath;busy=true;ProgressDialog progress=ProgressDialog.show(this,"SIU Local",request==71?"Guardando imagen...":"Procesando copia...",true,false);java.util.concurrent.ExecutorService executor=Executors.newSingleThreadExecutor();executor.execute(()->{String error=null;try{if(request==71){String name=store.importImage(uri);setPath(imagePath,name);}else if(request==72)store.exportZip(uri);else store.importZip(uri);}catch(Exception e){error=e.getMessage()==null?"No se pudo completar la operación":e.getMessage();}String failure=error;runOnUiThread(()->{busy=false;if(!isFinishing()&&!isDestroyed()){progress.dismiss();if(failure!=null)message("No se pudo completar",failure);else{if(request==73){history.clear();route="ajustes";selectedGestion="";}render();toast(request==71?"Imagen guardada":request==72?"Copia exportada":"Copia restaurada");}}});executor.shutdown();});}
+    @Override protected void onActivityResult(int request,int result,Intent intent){super.onActivityResult(request,result,intent);if(result!=RESULT_OK||intent==null||intent.getData()==null)return;Uri uri=intent.getData();if(request!=71&&request!=72&&request!=73)return;String imagePath=pendingImagePath;busy=true;ProgressDialog progress=ProgressDialog.show(this,"SIU",request==71?"Guardando imagen...":"Procesando copia...",true,false);java.util.concurrent.ExecutorService executor=Executors.newSingleThreadExecutor();executor.execute(()->{String error=null;try{if(request==71){String name=store.importImage(uri);setPath(imagePath,name);}else if(request==72)store.exportZip(uri);else store.importZip(uri);}catch(Exception e){error=e.getMessage()==null?"No se pudo completar la operación":e.getMessage();}String failure=error;runOnUiThread(()->{busy=false;if(!isFinishing()&&!isDestroyed()){progress.dismiss();if(failure!=null)message("No se pudo completar",failure);else{if(request==73){history.clear();route="ajustes";selectedGestion="";}render();toast(request==71?"Imagen guardada":request==72?"Copia exportada":"Copia restaurada");}}});executor.shutdown();});}
 }
