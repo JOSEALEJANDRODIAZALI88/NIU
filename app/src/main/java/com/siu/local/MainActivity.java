@@ -30,21 +30,46 @@ public class MainActivity extends Activity {
     final String[] cities={"Cochabamba","La Paz","Sucre","Trinidad","Santa Cruz"};
     final String[] days={"Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"};
     boolean busy, carnetUser;
+    boolean authenticated, biometricAttempted, loginAnotherAccount;
+    LoginScreen loginScreen;
+    BiometricAccess biometrics;
+    final Handler loginHandler=new Handler(Looper.getMainLooper());
+    static final String PRIVACY_URL="https://app.univalle.edu/politicaseguridad/politicaseguridad.html";
     final HashMap<String,Bitmap> artworkCache=new HashMap<>();
 
     @Override public void onCreate(Bundle state) {
-        super.onCreate(state); store=new LocalStore(this);
+        super.onCreate(state); store=new LocalStore(this);biometrics=new BiometricAccess(this);
+        authenticated=Boolean.TRUE.equals(getLastNonConfigurationInstance());
+        if(state!=null){biometricAttempted=state.getBoolean("biometricAttempted");loginAnotherAccount=state.getBoolean("loginAnotherAccount");}
         if(state!=null) { route=state.getString("route","home"); pendingImagePath=state.getString("image",""); selectedGestion=state.getString("gestion",""); carnetUser=state.getBoolean("carnetUser",false); ArrayList<String> h=state.getStringArrayList("history");if(h!=null)history.addAll(h); }
         getWindow().setStatusBarColor(Color.rgb(17,17,17));getWindow().setNavigationBarColor(Color.BLACK);
         if(Build.VERSION.SDK_INT>=35) getWindow().setDecorFitsSystemWindows(true);
         getOnBackInvokedDispatcherCompat(); render();
     }
+    @Override public Object onRetainNonConfigurationInstance(){return authenticated;}
+    @Override protected void onResume(){
+        super.onResume();
+        if(hasWindowFocus()&&!authenticated&&!biometricAttempted&&!loginAnotherAccount){
+            biometricAttempted=true;
+            requestBiometric();
+        }
+    }
+    @Override public void onWindowFocusChanged(boolean focused){
+        super.onWindowFocusChanged(focused);
+        // onResume can precede the first window focus.
+        if(focused&&!authenticated&&!biometricAttempted&&!loginAnotherAccount){biometricAttempted=true;requestBiometric();}
+    }
+    @Override protected void onStop(){
+        super.onStop();biometrics.cancel();loginHandler.removeCallbacksAndMessages(null);
+        if(loginScreen!=null){busy=false;loginScreen.loading.setVisibility(View.GONE);}
+    }
+    @Override protected void onDestroy(){biometrics.cancel();loginHandler.removeCallbacksAndMessages(null);if(loginScreen!=null)loginScreen.dispose();super.onDestroy();}
     private void getOnBackInvokedDispatcherCompat() {
         if(Build.VERSION.SDK_INT>=33) getOnBackInvokedDispatcher().registerOnBackInvokedCallback(0,this::back);
     }
-    @Override public void onSaveInstanceState(Bundle b) { super.onSaveInstanceState(b);b.putString("route",route);b.putString("image",pendingImagePath);b.putString("gestion",selectedGestion);b.putBoolean("carnetUser",carnetUser);b.putStringArrayList("history",new ArrayList<>(history)); }
+    @Override public void onSaveInstanceState(Bundle b) { super.onSaveInstanceState(b);b.putBoolean("biometricAttempted",biometricAttempted&&biometrics.signal==null);b.putBoolean("loginAnotherAccount",loginScreen!=null&&loginScreen.anotherAccount);b.putString("route",route);b.putString("image",pendingImagePath);b.putString("gestion",selectedGestion);b.putBoolean("carnetUser",carnetUser);b.putStringArrayList("history",new ArrayList<>(history)); }
     @Override public void onBackPressed() { back(); }
-    void back() { if(busy)return; hideKeyboard(); if(history.isEmpty()) { if(!route.equals("home")){route="home";render();}else super.onBackPressed(); }else {route=history.removeLast();render();} }
+    void back() { if(busy)return; hideKeyboard();if(!authenticated){if(loginScreen!=null&&loginScreen.anotherAccount){loginScreen.switchAccount(false);return;}biometrics.cancel();super.onBackPressed();return;} if(history.isEmpty()) { if(!route.equals("home")){route="home";render();}else super.onBackPressed(); }else {route=history.removeLast();render();} }
     void go(String s) { hideKeyboard();if(s.equals("carnet")&&!route.equals("carnet"))carnetUser=false;history.addLast(route);route=s;render(); }
     void hideKeyboard() { ((InputMethodManager)getSystemService(INPUT_METHOD_SERVICE)).hideSoftInputFromWindow(getWindow().getDecorView().getWindowToken(),0); }
     int dp(float n) {return (int)(n*getResources().getDisplayMetrics().density+0.5f);}
@@ -70,6 +95,12 @@ public class MainActivity extends Activity {
         if(home)icon(bar,"qr",WHITE,21,()->go("carnet"));
     }
     void render() {
+        if(!authenticated||route.equals("acceso")){
+            authenticated=false;route="acceso";history.clear();showLogin();return;
+        }
+        if(loginScreen!=null){loginScreen.dispose();loginScreen=null;}
+        getWindow().getDecorView().setSystemUiVisibility(0);
+        getWindow().setStatusBarColor(Color.rgb(17,17,17));getWindow().setNavigationBarColor(Color.BLACK);
         String theme=store.obj("ajustes").optString("tema");boolean light=theme.equals("Claro") || theme.equals("Sistema") && (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)==Configuration.UI_MODE_NIGHT_NO;
         // References use the dark appearance. System mode follows the actual device setting.
         bg=light?Color.rgb(246,246,246):Color.BLACK;card=light?Color.WHITE:Color.rgb(28,28,28);fg=light?Color.rgb(30,30,30):WHITE;
@@ -106,7 +137,6 @@ public class MainActivity extends Activity {
             case "bancos" -> banks(arg());
             case "ayuda" -> helpList();
             case "ayudaDetalle" -> helpDetail(arg());
-            case "acceso" -> access();
             case "materia" -> subjectDetail(arg());
             default -> {TextView t=txt("No se encontraron resultados.");add(body,t,-1,-2);}
         }
@@ -170,12 +200,45 @@ public class MainActivity extends Activity {
         LinearLayout drawer=col();drawer.setBackground(shape(card,25));FrameLayout.LayoutParams p=new FrameLayout.LayoutParams((int)(getResources().getDisplayMetrics().widthPixels*.84f),-1,Gravity.LEFT);frame.addView(drawer,p);
         JSONObject profile=store.obj("perfil");LinearLayout top=col();top.setGravity(Gravity.CENTER);top.setBackground(shape(bg,28));pad(top,10,16);add(drawer,top,-1,185);add(top,picture(profile.optString("foto"),"portrait.jpg",24),100,100);gap(top,9);TextView n=text(profile.optString("nombre"),12,fg,true);n.setGravity(Gravity.CENTER);add(top,n,-1,-2);gap(top,7);TextView career=text(profile.optString("carrera"),10,GRAY,false);career.setGravity(Gravity.CENTER);add(top,career,-1,-2);
         String[][] items={{"home","Página de inicio","home"},{"user","Perfil de usuario","perfil"},{"id","Carnet virtual","carnet"},{"logout","Cerrar sesión","acceso"}};
-        for(String[] item:items){LinearLayout r=row();pad(r,12,10);icon(r,item[0],fg,30,null);TextView t=text(item[1],16,fg,false);t.setPadding(dp(14),0,0,0);add(r,t,-1,-2);add(drawer,r,-1,61);r.setOnClickListener(v->{if(item[2].equals("acceso")){new AlertDialog.Builder(this).setTitle("Cerrar sesión local").setMessage("Tus datos se conservarán en este teléfono.").setPositiveButton("Cerrar sesión",(d,w)->{history.clear();route="acceso";render();}).setNegativeButton("Cancelar",null).show();}else{if(item[2].equals("carnet"))carnetUser=false;route=item[2];render();}});}
+        for(String[] item:items){LinearLayout r=row();pad(r,12,10);icon(r,item[0],fg,30,null);TextView t=text(item[1],16,fg,false);t.setPadding(dp(14),0,0,0);add(r,t,-1,-2);add(drawer,r,-1,61);r.setOnClickListener(v->{if(item[2].equals("acceso")){new AlertDialog.Builder(this).setTitle("Cerrar sesión local").setMessage("Tus datos se conservarán en este teléfono.").setPositiveButton("Cerrar sesión",(d,w)->logout()).setNegativeButton("Cancelar",null).show();}else{if(item[2].equals("carnet"))carnetUser=false;route=item[2];render();}});}
         FrameLayout middle=new FrameLayout(this);drawer.addView(middle,new LinearLayout.LayoutParams(-1,0,1));ImageView seal=picture(store.obj("imagenes").optString("sello"),"artwork/logo.png",0);seal.setBackgroundColor(Color.TRANSPARENT);seal.setAlpha(.25f);seal.setScaleType(ImageView.ScaleType.FIT_CENTER);middle.addView(seal,new FrameLayout.LayoutParams(dp(140),dp(140),Gravity.CENTER));
         LinearLayout settings=row();pad(settings,12,8);settings.setBackground(shape(bg,35));icon(settings,"settings",fg,30,null);TextView settingLabel=text("Ajustes",16,fg,false);settingLabel.setPadding(dp(14),0,0,0);add(settings,settingLabel,-1,-2);settings.setOnClickListener(v->go("ajustes"));LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(-1,dp(61));sp.setMargins(dp(6),0,dp(6),dp(8));drawer.addView(settings,sp);
         frame.setOnClickListener(v->back());drawer.setOnClickListener(v->{});
     }
-    void access(){LinearLayout l=scroll();gap(l,60);ImageView seal=picture(store.obj("imagenes").optString("sello"),"seal.jpg",0);LinearLayout center=col();center.setGravity(Gravity.CENTER);add(center,seal,110,110);add(l,center,-1,-2);gap(l,30);TextView t=text("SIU Local",30,fg,true);t.setGravity(Gravity.CENTER);add(l,t,-1,-2);gap(l,30);add(l,button("Entrar con mis datos locales",()->{route="home";render();}),-1,-2);}
+    void showLogin(){
+        if(loginScreen!=null)loginScreen.dispose();
+        getWindow().setStatusBarColor(Color.TRANSPARENT);getWindow().setNavigationBarColor(Color.TRANSPARENT);
+        if(Build.VERSION.SDK_INT>=29)getWindow().setNavigationBarContrastEnforced(false);
+        getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE|View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN|View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
+        frame=new FrameLayout(this);loginScreen=new LoginScreen(this,loginAnotherAccount);
+        frame.addView(loginScreen,new FrameLayout.LayoutParams(-1,-1));setContentView(frame);
+    }
+    void loginWithPassword(String password,String username){
+        if(authenticated||busy||loginScreen==null)return;
+        biometrics.cancel();hideKeyboard();
+        if(username!=null&&username.trim().isEmpty()){loginScreen.showError("Debe ingresar un usuario");return;}
+        if(password.isEmpty()){loginScreen.showError("Debe ingresar un pin de usuario");return;}
+        JSONObject profile=store.obj("perfil");
+        String id=profile.optString("qrTexto").replaceFirst("^SIU-LOCAL:","");
+        boolean known=username==null||username.trim().equalsIgnoreCase(profile.optString("correo"))
+                ||username.trim().equals(id)||username.trim().equalsIgnoreCase(loginScreen.firstName());
+        if(!known){loginScreen.showError("Esta cuenta no está disponible en este teléfono.");return;}
+        if(!"154745".equals(password)){loginScreen.showError("Contraseña incorrecta");return;}
+        completeLogin();
+    }
+    void completeLogin(){
+        if(authenticated||busy||loginScreen==null||!route.equals("acceso")||isFinishing())return;
+        biometrics.cancel();hideKeyboard();busy=true;loginScreen.showLoading();
+        loginHandler.postDelayed(()->{
+            if(isFinishing()||isDestroyed())return;
+            busy=false;authenticated=true;loginAnotherAccount=false;history.clear();route="home";render();
+        },450);
+    }
+    void requestBiometric(){
+        if(!authenticated&&!busy&&loginScreen!=null&&!loginScreen.anotherAccount&&store.obj("perfil").optBoolean("lector",true))biometrics.authenticate();
+    }
+    void logout(){biometrics.cancel();loginHandler.removeCallbacksAndMessages(null);busy=false;authenticated=false;biometricAttempted=true;loginAnotherAccount=false;history.clear();route="acceso";render();}
+    void openPrivacyPolicy(){biometrics.cancel();hideKeyboard();open(PRIVACY_URL);}
     void profile() {
         JSONObject p=store.obj("perfil");LinearLayout list=scroll();list.setPadding(0,dp(7),0,0);
         FrameLayout paper=new FrameLayout(this);paper.setMinimumHeight(dp(600));paper.setBackground(shape(card,20));LinearLayout.LayoutParams pp=new LinearLayout.LayoutParams(-1,-2,1);pp.setMargins(dp(11),dp(4),dp(11),0);list.addView(paper,pp);

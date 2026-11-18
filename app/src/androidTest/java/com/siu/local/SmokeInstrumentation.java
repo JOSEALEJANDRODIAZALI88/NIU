@@ -44,10 +44,11 @@ public class SmokeInstrumentation extends Instrumentation {
             check(local.obj("perfil").getString("nombre").equals("PRUEBA DE PERSISTENCIA"),"Failed import keeps data");
 
             Intent intent=new Intent(context,MainActivity.class);intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK);
-            activity=(MainActivity)startActivitySync(intent);activity=checkCarnetRecreation(activity);MainActivity a=activity;previous=a.store;
+            activity=(MainActivity)startActivitySync(intent);checkLogin(activity);activity=checkLockedRecreation(activity);activity=checkCarnetRecreation(activity);MainActivity a=activity;previous=a.store;
             runOnMainSync(()->{a.store=local;a.history.clear();});
             String[] routes={"home","drawer","perfil","carnet","ajustes","Social","Materias","Académica","Recursos","Tip's","contactos:0","contactos:1","contactos:2","contactos:3","contactos:4","lugares:0","consultas","consulta:0","nuevaConsulta:0","sugerencias","sugerencia:0","documentos:0","documentos:1","horarios:0","horarios:1","horarios:5","notas","pagos","costos","tramites","tipos","detalle:0","biblioteca","descuentos","correo","proyectos","bancos:0","bancos:1","ayuda","ayudaDetalle:0","ayudaDetalle:1","ayudaDetalle:2","materia:0","editor:","editor:perfil","editor:materias","editor:materias/0","editor:horarios","editor:tiposTramites/0/requisitos","acceso"};
             for(String route:routes){runOnMainSync(()->{a.route=route;a.render();check(a.frame.getChildCount()>0,"Render "+route);});waitForIdleSync();}
+            passwordLogin(a);
             runOnMainSync(()->{a.selectedGestion=local.arr("gestiones").optString(0);a.route="notas";a.render();check(a.body.getChildCount()>=2,"Grades selector and results");a.route="editor:perfil";a.render();EditText field=findEdit(a.root);check(field!=null,"Profile editor has editable fields");field.setText("EDITADO EN UI");a.setPath("materias/0/parcial1","99,0");
                 a.route="editor:notasAnteriores/Gestión 1~12026";a.render();check(a.resolve("notasAnteriores/Gestión 1~12026") instanceof JSONArray,"Historical semester path supports slash");
             });
@@ -78,6 +79,78 @@ public class SmokeInstrumentation extends Instrumentation {
         finally{if(activity!=null&&previous!=null){MainActivity a=activity;LocalStore original=previous;runOnMainSync(()->{a.store=original;a.route="home";a.selectedGestion="";a.history.clear();a.render();});}}
     }
     EditText findEdit(android.view.View view){if(view instanceof EditText e)return e;if(view instanceof android.view.ViewGroup g)for(int i=0;i<g.getChildCount();i++){EditText e=findEdit(g.getChildAt(i));if(e!=null)return e;}return null;}
+    void checkLogin(MainActivity a)throws Exception{
+        runOnMainSync(()->{
+            a.biometrics.cancel();
+            check(!a.authenticated&&a.route.equals("acceso"),"Cold launch requires authentication");
+            a.route="carnet";a.render();check(a.route.equals("acceso"),"Protected route cannot bypass login");
+            check(findText(a.frame,"INICIAR SESIÓN")!=null,"Reference login button");
+            check(findText(a.frame,"Política de privacidad")!=null,"Privacy link");
+            check(findDescription(a.frame,"Entrar con biometría")==null,"Login has no fingerprint icon");
+            android.graphics.Paint fontPaint=new android.graphics.Paint();fontPaint.setTypeface(a.loginScreen.handwriting);
+            check(fontPaint.hasGlyph("Ñ")&&fontPaint.hasGlyph("ñ")&&fontPaint.hasGlyph("Ó"),"Login font includes Spanish glyphs");
+            check(a.loginScreen.password.getTransformationMethod() instanceof android.text.method.PasswordTransformationMethod,"PIN is concealed");
+            a.loginScreen.submit();check(a.loginScreen.alert.isShowing(),"Empty PIN opens alert");
+            check(findText(a.loginScreen.alert.getWindow().getDecorView(),"Debe ingresar un pin de usuario")!=null,"Reference empty PIN message");
+            a.loginScreen.alert.getButton(AlertDialog.BUTTON_POSITIVE).performClick();
+            // Native positive buttons post dismissal; close before the next same-thread assertion.
+            a.loginScreen.alert.dismiss();
+            a.loginScreen.password.setText("000000");a.loginScreen.submit();
+            check(!a.authenticated&&!a.busy,"Incorrect password cannot enter");
+            check(findText(a.loginScreen.alert.getWindow().getDecorView(),"Contraseña incorrecta")!=null,"Incorrect PIN message");
+            a.loginScreen.alert.dismiss();
+            a.loginScreen.switchAccount(true);check(a.loginScreen.username.getVisibility()==android.view.View.VISIBLE,"Other account reveals username");
+            a.loginScreen.username.setText("unknown");a.loginScreen.password.setText("154745");a.loginScreen.submit();
+            check(!a.authenticated&&!a.busy,"Unknown account cannot enter with local PIN");a.loginScreen.alert.dismiss();
+            a.loginScreen.switchAccount(false);
+        });
+        IntentFilter filter=new IntentFilter(Intent.ACTION_VIEW);filter.addDataScheme("https");
+        ActivityMonitor browser=addMonitor(filter,new ActivityResult(Activity.RESULT_OK,null),true);
+        runOnMainSync(()->findText(a.frame,"Política de privacidad").performClick());
+        check(browser.getHits()==1,"Privacy link launches an external browser intent");removeMonitor(browser);
+        check(MainActivity.PRIVACY_URL.equals("https://app.univalle.edu/politicaseguridad/politicaseguridad.html"),"Exact reference policy URL");
+        captureLogin(a,"login");
+        runOnMainSync(()->a.loginScreen.submit());captureLogin(a,"login-empty-pin");
+        runOnMainSync(()->a.loginScreen.alert.dismiss());
+        passwordLogin(a);
+        runOnMainSync(()->{a.logout();check(!a.authenticated&&a.route.equals("acceso")&&a.history.isEmpty(),"Logout locks screen and clears history");a.go("perfil");check(a.route.equals("acceso"),"Navigation stays locked after logout");});
+        passwordLogin(a);
+    }
+    void passwordLogin(MainActivity a){
+        runOnMainSync(()->{a.loginScreen.password.setText("154745");findText(a.frame,"INICIAR SESIÓN").performClick();check(a.busy&&!a.authenticated,"Successful PIN shows loading before home");});
+        waitForLogin(a);
+    }
+    MainActivity checkLockedRecreation(MainActivity a){
+        ActivityMonitor monitor=addMonitor(MainActivity.class.getName(),null,false);
+        runOnMainSync(()->{a.logout();a.loginScreen.switchAccount(true);a.loginScreen.password.setText("154745");a.recreate();});
+        MainActivity recreated=(MainActivity)waitForMonitorWithTimeout(monitor,10000);removeMonitor(monitor);
+        check(recreated!=null,"Locked activity recreates");waitForIdleSync();
+        runOnMainSync(()->{
+            check(!recreated.authenticated&&recreated.route.equals("acceso"),"Recreation cannot unlock login");
+            check(recreated.loginScreen.anotherAccount,"Recreation preserves other-account selection");
+            check(recreated.loginScreen.password.length()==0,"Recreation never saves the password");
+            recreated.loginScreen.switchAccount(false);
+        });passwordLogin(recreated);return recreated;
+    }
+    void waitForLogin(MainActivity a){
+        java.util.concurrent.CountDownLatch entered=new java.util.concurrent.CountDownLatch(1);
+        runOnMainSync(()->a.loginHandler.postDelayed(entered::countDown,600));
+        try{check(entered.await(5,java.util.concurrent.TimeUnit.SECONDS),"Login transition completes");}catch(InterruptedException e){throw new AssertionError(e);}
+        waitForIdleSync();runOnMainSync(()->check(a.authenticated&&a.route.equals("home")&&a.history.isEmpty(),"Valid authentication opens home without login in back stack"));
+    }
+    void captureLogin(MainActivity a,String name)throws Exception{
+        if(!screenshots)return;
+        java.util.concurrent.CountDownLatch drawn=new java.util.concurrent.CountDownLatch(1);
+        runOnMainSync(()->{
+            android.view.View target=a.loginScreen.alert!=null&&a.loginScreen.alert.isShowing()?a.loginScreen.alert.getWindow().getDecorView():a.frame;
+            target.postOnAnimation(()->target.postOnAnimation(drawn::countDown));
+        });
+        check(drawn.await(5,java.util.concurrent.TimeUnit.SECONDS),"Login screenshot frame "+name);
+        getUiAutomation().waitForIdle(200,5000);
+        File directory=new File(getTargetContext().getExternalFilesDir(null),"visual-checks");directory.mkdirs();
+        Bitmap bitmap=getUiAutomation().takeScreenshot();check(bitmap!=null,"Login screenshot "+name);
+        try(OutputStream out=new FileOutputStream(new File(directory,name+".png"))){bitmap.compress(Bitmap.CompressFormat.PNG,100,out);}bitmap.recycle();
+    }
     TextView findText(android.view.View view,String label){if(view instanceof TextView t&&label.contentEquals(t.getText()))return t;if(view instanceof android.view.ViewGroup g)for(int i=0;i<g.getChildCount();i++){TextView found=findText(g.getChildAt(i),label);if(found!=null)return found;}return null;}
     android.view.View findDescription(android.view.View view,String description){if(description.contentEquals(view.getContentDescription()==null?"":view.getContentDescription()))return view;if(view instanceof android.view.ViewGroup g)for(int i=0;i<g.getChildCount();i++){android.view.View found=findDescription(g.getChildAt(i),description);if(found!=null)return found;}return null;}
     int findImageResource(android.view.View view){int count=view instanceof ImageView?1:0;if(view instanceof android.view.ViewGroup g)for(int i=0;i<g.getChildCount();i++)count+=findImageResource(g.getChildAt(i));return count;}

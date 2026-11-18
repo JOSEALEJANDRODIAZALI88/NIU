@@ -7,6 +7,7 @@ from io import BytesIO
 from pathlib import Path
 from zipfile import ZipFile
 from PIL import Image, ImageCms
+from prepare_login_font import prepare_login_font
 
 root = Path(__file__).resolve().parents[1]
 main = root / 'app/src/main'
@@ -18,7 +19,8 @@ def write(path, data):
     path.write_bytes(data)
 
 with ZipFile(root / 'recursos/SIU_1.82_APKPure.apk') as apk:
-    for font in ('FontAwesomeSolid.otf', 'OpenSans-Regular.ttf', 'OpenSans-Semibold.ttf'):
+    for font in ('FontAwesomeSolid.otf', 'OpenSans-Regular.ttf', 'OpenSans-Semibold.ttf',
+                 'Kontana.ttf', 'RookieRegular.ttf'):
         write(assets / 'fonts' / font, apk.read('assets/' + font))
     artwork = ('bandera_bolivia', 'logo', 'logo_actual_small', 'logo_carnet',
                'logo_untext', 'logo_varios', 'materia_mensaje',
@@ -45,4 +47,5 @@ if profile:
     card_photo = ImageCms.profileToProfile(card_photo, ImageCms.ImageCmsProfile(BytesIO(profile)),
                                           ImageCms.createProfile('sRGB'), outputMode='RGB')
 card_photo.crop((206, 235, 384, 413)).save(assets / 'portrait_carnet.png')
+prepare_login_font()
 print('Original artwork, launcher layers, fonts and reference portraits prepared.')

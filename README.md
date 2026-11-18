@@ -12,6 +12,16 @@ Requisitos: JDK 21 o superior, Android SDK 36 y Android 8.0 (API 26) o posterior
 
 **APK:** `app/build/outputs/apk/debug/app-debug.apk`.
 
+## Inicio de sesión
+
+- Al abrir la aplicación se muestra el acceso de `referencias/`, con el fondo, escudo y fuentes originales, contraseña oculta, aviso de PIN vacío e indicador «Ingresando».
+- **Contraseña local: `154745`.** Una contraseña incorrecta mantiene la aplicación bloqueada. Cerrar sesión conserva el contenido y vuelve al acceso.
+- La biometría se solicita automáticamente al abrir una nueva sesión si hay una huella o biometría compatible registrada en Android y **Perfil → Autenticación con Lector** está habilitado. Cancelar permite usar la contraseña. No aparece ningún icono de huella en el formulario; Android gestiona la comprobación y su cuadro de diálogo.
+- Las «Ñ/ñ» y vocales acentuadas usan los trazos de la misma fuente manuscrita, sin cambiar a una fuente del sistema. `python tools/prepare_login_font.py` reproduce `RookieSpanish.ttf` (requiere `fonttools`).
+- **Iniciar sesión en otra cuenta** muestra usuario y contraseña. Esta instalación local reconoce la cuenta configurada: inicialmente `2033013`, `LUZ` o `ctl2033013@est.univalle.edu`. Las cuentas desconocidas se rechazan.
+- **Política de privacidad** abre el navegador externo en [la página exacta de las referencias](https://app.univalle.edu/politicaseguridad/politicaseguridad.html).
+- Girar el dispositivo conserva la sesión ya autenticada, pero no guarda el PIN escrito. Un proceso nuevo vuelve a requerir autenticación.
+
 ## Cambiar los datos, fotos y QR
 
 Abre **☰ -> Ajustes -> ⋮ (Herramientas locales) -> Editar contenido**. El botón del lápiz del perfil abre directamente sus campos.
@@ -50,11 +60,20 @@ adb shell am instrument -w com.siu.local.test/com.siu.local.SmokeInstrumentation
 
 La instrumentación comprueba las pantallas, navegación por menú y perfil, cambios lista/cuadrícula y tema, persistencia de perfil y notas, importación de imágenes, copia ZIP con imágenes, rechazo de rutas no válidas, recursos originales, icono adaptable y lectura del QR realmente mostrado en el carnet. También verifica ambas pestañas, selección guardada, actualización, imagen QR personalizada y errores de contenido vacío o demasiado largo. Usa un directorio de pruebas independiente del contenido del usuario.
 
+El acceso añade pruebas de PIN vacío/incorrecto/correcto, rutas protegidas, cierre de sesión, cuenta desconocida, enlace externo, recreación de la actividad, ausencia de icono biométrico y caracteres españoles de la fuente. Verificación realizada en el emulador Android API 37: **187 comprobaciones de instrumentación** con capturas y **14 comprobaciones de interacción**, incluyendo el lector biométrico del emulador:
+
+```powershell
+# Requiere un emulador con huella ID 1 registrada y Chrome ya inicializado.
+python tools/verify_login_device.py
+```
+
+Este script usa el diálogo biométrico real de Android y `adb emu finger touch` para comprobar éxito, rechazo, cancelación y reintento; también prueba teclado, cambio de cuenta y apertura de Chrome. Las capturas del acceso están en `tools/visual-checks/login*.png`. `python tools/compare_login.py` genera `tools/comparisons/login.jpg` con la referencia y la implementación.
+
 ### Recursos y comparación visual
 
 - El icono adaptable conserva las capas originales por densidad. Las tarjetas de la cuadrícula usan sus PNG originales; la lista y las barras usan los símbolos de `FontAwesomeSolid.otf` del APK.
 - Los sellos y las banderas proceden del APK, sin ampliaciones de recortes de pantalla. La foto personal procede de las capturas aportadas, con el encuadre de la referencia correspondiente en perfil y carnet; los datos y las imágenes personalizadas existentes tienen prioridad.
-- `python tools/prepare_assets.py` reproduce los recursos seleccionados desde `recursos/SIU_1.82_APKPure.apk`. Requiere Python y Pillow (`python -m pip install Pillow`). No copia código del APK ni modifica los datos guardados.
+- `python tools/prepare_assets.py` reproduce los recursos seleccionados desde `recursos/SIU_1.82_APKPure.apk`. Requiere Python, Pillow y fonttools (`python -m pip install Pillow fonttools`). No copia código del APK ni modifica los datos guardados.
 - El APK original se abrió en el emulador: solicita autenticación. Sin credenciales, la comparación de las pantallas internas se realiza contra las capturas proporcionadas, no contra una sesión institucional.
 - Las barras del sistema y algunos controles nativos pueden variar entre versiones y fabricantes de Android; no se garantiza una coincidencia píxel por píxel.
 
@@ -71,6 +90,8 @@ Las capturas quedan en `tools/visual-checks/` y las comparaciones en `tools/comp
 ### Archivos principales
 
 - `app/src/main/java/com/siu/local/MainActivity.java`: pantallas, navegación y editor.
+- `app/src/main/java/com/siu/local/LoginScreen.java`: diseño del acceso, formularios, alertas y carga.
+- `app/src/main/java/com/siu/local/BiometricAccess.java`: autenticación biométrica nativa y cancelación por ciclo de vida.
 - `app/src/main/java/com/siu/local/LocalStore.java`: persistencia, imágenes y copias.
 - `app/src/main/java/com/siu/local/SiuIcon.java`: símbolos de la fuente original y flecha de navegación Android.
 - `app/src/main/assets/artwork/`, `app/src/main/assets/fonts/`, `app/src/main/res/mipmap-*/`: recursos originales seleccionados.
